@@ -16,6 +16,8 @@ const qrCanvas = document.getElementById('qrCanvas');
 const qrText = document.getElementById('qrText');
 const closeQrModal = document.getElementById('closeQrModal');
 
+const STORAGE_KEY = 'cloudflaresub_state';
+
 const demoVmess = [
   'vmess://ewogICJ2IjogIjIiLAogICJwcyI6ICJkZW1vLXdzLXRscyIsCiAgImFkZCI6ICJlZGdlLmV4YW1wbGUuY29tIiwKICAicG9ydCI6ICI0NDMiLAogICJpZCI6ICIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLAogICJzY3kiOiAiYXV0byIsCiAgIm5ldCI6ICJ3cyIsCiAgInRscyI6ICJ0bHMiLAogICJwYXRoIjogIi93cyIsCiAgImhvc3QiOiAiZWRnZS5leGFtcGxlLmNvbSIsCiAgInNuaSI6ICJlZGdlLmV4YW1wbGUuY29tIiwKICAiZnAiOiAiY2hyb21lIiwKICAiYWxwbiI6ICJoMixodHRwLzEuMSIKfQ=='
 ].join('\n');
@@ -26,11 +28,92 @@ const demoIps = [
   '104.18.3.4:2053#US-Edge'
 ].join('\n');
 
+// ========== 自动保存 / 恢复 ==========
+
+function saveFormInputs() {
+  const state = {
+    nodeLinks: document.getElementById('nodeLinks').value,
+    preferredIps: document.getElementById('preferredIps').value,
+    namePrefix: document.getElementById('namePrefix').value,
+    keepOriginalHost: document.getElementById('keepOriginalHost').checked,
+  };
+  try {
+    localStorage.setItem(STORAGE_KEY + '_form', JSON.stringify(state));
+  } catch {}
+}
+
+function restoreFormInputs() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY + '_form');
+    if (!saved) return;
+    const state = JSON.parse(saved);
+    if (state.nodeLinks) document.getElementById('nodeLinks').value = state.nodeLinks;
+    if (state.preferredIps) document.getElementById('preferredIps').value = state.preferredIps;
+    if (state.namePrefix) document.getElementById('namePrefix').value = state.namePrefix;
+    if (state.keepOriginalHost !== undefined) document.getElementById('keepOriginalHost').checked = state.keepOriginalHost;
+  } catch {}
+}
+
+function saveResults(data) {
+  try {
+    localStorage.setItem(STORAGE_KEY + '_result', JSON.stringify(data));
+  } catch {}
+}
+
+function restoreResults() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY + '_result');
+    if (!saved) return;
+    const data = JSON.parse(saved);
+
+    autoUrl.value = data.urls?.auto || '';
+    rawUrl.value = data.urls?.raw || '';
+    document.getElementById('rocketUrl').value = data.urls?.raw || '';
+    clashUrl.value = data.urls?.clash || '';
+    surgeUrl.value = data.urls?.surge || '';
+
+    emptyState.classList.add('hidden');
+
+    document.getElementById('statInputNodes').textContent = data.counts?.inputNodes || 0;
+    document.getElementById('statEndpoints').textContent = data.counts?.preferredEndpoints || 0;
+    document.getElementById('statOutputNodes').textContent = data.counts?.outputNodes || 0;
+
+    if (data.preview) {
+      previewBody.innerHTML = data.preview
+        .map(
+          (item) => `
+            <tr>
+              <td>${escapeHtml(item.name)}</td>
+              <td>${escapeHtml(item.type)}</td>
+              <td>${escapeHtml(item.server)}</td>
+              <td>${escapeHtml(String(item.port))}</td>
+              <td>${escapeHtml(item.host || '-')}</td>
+              <td>${escapeHtml(item.sni || '-')}</td>
+            </tr>`,
+        )
+        .join('');
+    }
+  } catch {}
+}
+
+// 页面加载时恢复
+restoreFormInputs();
+restoreResults();
+
+// 输入时自动保存
+['nodeLinks', 'preferredIps', 'namePrefix'].forEach((id) => {
+  document.getElementById(id).addEventListener('input', saveFormInputs);
+});
+document.getElementById('keepOriginalHost').addEventListener('change', saveFormInputs);
+
+// ========== 原有逻辑 ==========
+
 fillDemoBtn.addEventListener('click', () => {
   document.getElementById('nodeLinks').value = demoVmess;
   document.getElementById('preferredIps').value = demoIps;
   document.getElementById('namePrefix').value = 'CF';
   document.getElementById('keepOriginalHost').checked = true;
+  saveFormInputs();
 });
 
 form.addEventListener('submit', async (event) => {
@@ -92,6 +175,9 @@ form.addEventListener('submit', async (event) => {
       warningBox.textContent = data.warnings.join('\n');
       warningBox.classList.remove('hidden');
     }
+
+    // 保存生成结果
+    saveResults(data);
 
     resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (error) {
